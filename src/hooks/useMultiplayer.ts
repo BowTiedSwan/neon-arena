@@ -38,7 +38,7 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
   const initializedRef = useRef(false);
   const localPlayerNameRef = useRef(localPlayerName);
 
-  // Keep ref in sync without triggering re-renders
+  // Keep ref in sync without triggering effect re-runs
   localPlayerNameRef.current = localPlayerName;
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
@@ -55,10 +55,6 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
       updated[index] = { ...updated[index], ...nextPlayer };
       return updated;
     });
-  }, []);
-
-  const removePlayer = useCallback((playerId: string): void => {
-    setPlayers((currentPlayers) => currentPlayers.filter((player) => player.id !== playerId));
   }, []);
 
   const sendMessage = useCallback((message: GameMessage): void => {
@@ -113,6 +109,18 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
 
     const unsubscribeMessage = manager.onMessage((rawData) => {
       if (!isGameMessage(rawData)) return;
+
+      // Handle player name exchange
+      if (rawData.type === 'game-event' && isPlayerNamePayload(rawData.payload)) {
+        upsertPlayer({
+          id: rawData.payload.playerId,
+          name: rawData.payload.playerName,
+          isHost: false,
+          ready: true,
+        });
+        return;
+      }
+
       if (rawData.type === 'state-sync' && isVersionedState(rawData.payload)) {
         synchronizerRef.current.receiveState(rawData.payload);
       }
@@ -120,16 +128,33 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
 
     const connect = async (): Promise<void> => {
       try {
-        // Try to join as guest first
-        await manager.joinRoom(roomId);
-        setIsHost(false);
+        // Try to create room as host first (fast fail if peer ID already taken)
+        await manager.createRoom(roomId);
+        setIsHost(true);
       } catch {
-        // If join fails, create room as host
+        // Room already exists — join as guest
         try {
-          await manager.createRoom(roomId);
-          setIsHost(true);
+          await manager.joinRoom(roomId);
+          setIsHost(false);
+
+          // Send our name to the host
+          setTimeout(() => {
+            try {
+              manager.send({
+                type: 'game-event',
+                payload: {
+                  event: 'player-name',
+                  playerId: manager.getPeerId() ?? '',
+                  playerName: localPlayerNameRef.current,
+                },
+                timestamp: Date.now(),
+              });
+            } catch {
+              // Ignore send errors during initial connection
+            }
+          }, 500);
         } catch (err) {
-          console.error('Failed to connect:', err);
+          console.error('[Multiplayer] Failed to connect:', err);
           setStatus('error');
         }
       }
@@ -175,4 +200,16 @@ function isVersionedState(value: unknown): value is VersionedState {
   if (!value || typeof value !== 'object') return false;
   const typed = value as Partial<VersionedState>;
   return 'state' in typed && typeof typed.timestamp === 'number';
+}
+
+interface PlayerNamePayload {
+  event: string;
+  playerId: string;
+  playerName: string;
+}
+
+function isPlayerNamePayload(value: unknown): value is PlayerNamePayload {
+  if (!value || typeof value !== 'object') return false;
+  const typed = value as Partial<PlayerNamePayload>;
+  return typed.event === 'player-name' && typeof typed.playerId === 'string' && typeof typed.playerName === 'string';
 }

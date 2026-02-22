@@ -221,25 +221,32 @@ export class PeerManager {
     });
   }
 
-  private awaitConnectionOpen(connection: DataConnection): Promise<void> {
+  private awaitConnectionOpen(connection: DataConnection, timeoutMs = 8000): Promise<void> {
     return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const onOpen = (): void => {
         cleanup();
         resolve();
       };
-
       const onError = (error: unknown): void => {
         cleanup();
         reject(error instanceof Error ? error : new Error(String(error)));
       };
 
+      const onTimeout = (): void => {
+        cleanup();
+        connection.close();
+        reject(new Error('Connection timed out'));
+      };
       const cleanup = (): void => {
-        connection.off("open", onOpen);
-        connection.off("error", onError);
+        if (timer) clearTimeout(timer);
+        connection.off('open', onOpen);
+        connection.off('error', onError);
       };
 
-      connection.on("open", onOpen);
-      connection.on("error", onError);
+      timer = setTimeout(onTimeout, timeoutMs);
+      connection.on('open', onOpen);
+      connection.on('error', onError);
     });
   }
 }
