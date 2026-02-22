@@ -36,6 +36,10 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
   const peerManagerRef = useRef<PeerManager | null>(null);
   const synchronizerRef = useRef(new StateSynchronizer());
   const initializedRef = useRef(false);
+  const localPlayerNameRef = useRef(localPlayerName);
+
+  // Keep ref in sync without triggering re-renders
+  localPlayerNameRef.current = localPlayerName;
 
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [players, setPlayers] = useState<Player[]>([]);
@@ -91,7 +95,7 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
       if (event.localPeerId) {
         upsertPlayer({
           id: event.localPeerId,
-          name: localPlayerName,
+          name: localPlayerNameRef.current,
           isHost: event.status === 'connected' ? manager.isHost : false,
           ready: true,
         });
@@ -141,7 +145,7 @@ export function useMultiplayer(options: UseMultiplayerOptions = {}): UseMultipla
       initializedRef.current = false;
       setPlayers([]);
     };
-  }, [autoConnect, localPlayerName, roomId, upsertPlayer]);
+  }, [autoConnect, roomId, upsertPlayer]);
 
   const isConnected = useMemo(() => status === 'connected', [status]);
 
