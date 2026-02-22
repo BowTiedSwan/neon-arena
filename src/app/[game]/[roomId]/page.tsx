@@ -25,7 +25,7 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   const game = getGame(gameSlug);
   const isValid = isValidGame(gameSlug);
 
-  const multiplayer = useMultiplayer({ roomId, mode: 'host' as const, autoConnect: true, localPlayerName: playerName || 'Player' });
+  const multiplayer = useMultiplayer({ roomId, autoConnect: true, localPlayerName: playerName || 'Player' });
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
